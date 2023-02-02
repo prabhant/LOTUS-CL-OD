@@ -16,6 +16,8 @@ from ott.problems.quadratic import quadratic_problem
 from ott.solvers.quadratic import gromov_wasserstein
 from sklearn.decomposition import PCA, NMF, LatentDirichletAllocation, IncrementalPCA, FastICA
 
+
+
 #define a class
 class LotusMetaData:
     #define a constructor
@@ -37,9 +39,7 @@ class LotusMetaData:
         return self.eval_metric
 
     def create_lotus_metadata(self):
-
         for dataset in self.dataset_list:
-            
             if dataloader != None:
               dataset = dataloader(dataset)
             model = GamaClassifier(max_total_time = self.time_budget)
@@ -49,15 +49,15 @@ class LotusMetaData:
             self.datasets.append(dataset)
             self.models.append(model)
             self.scores.append(score)
-        if out == 'csv':
+        if self.out == 'csv':
             df = pd.DataFrame({'datasets': self.datasets, 'models': self.models, 'scores': self.scores})
             df.to_csv('lotus_metadata.csv', index=False)
             print('lotus_metadata.csv is created')
-        elif out == 'json':
+        elif self.out == 'json':
             with open('lotus_metadata.json', 'w') as f:
                 json.dump({'datasets': self.datasets, 'models': self.models, 'scores': self.scores}, f)
             print('lotus_metadata.json is created')
-        elif out == 'pickle':
+        elif self.out == 'pickle':
             with open('lotus_metadata.pickle', 'wb') as f:
                 pickle.dump({'datasets': self.datasets, 'models': self.models, 'scores': self.scores}, f)
             print('lotus_metadata.pickle is created')
@@ -72,29 +72,33 @@ class LotusModel:
         self.meta_data_obj = meta_data_obj
         self.distance = distance
         self.preprocessing = preprocessing
-    
+        self.best_model = None
+        self.best_score = None
+        self.best_dataset = None
+        self.best_distance = None
+
     def find_model(self):
         # find the best model
         best_model = None
         best_score = None
-        for i in range(len(datasets)):
+        for i in range(len(md.datasets)):
             if self.distance == 'gwlr':
                 if self.preprocessing == 'ica':
-                    anchor_dataset = new_dataset
+                    anchor_dataset = self.new_dataset
                     anchor_dataset = FastICA().fit_transform(anchor_dataset)
-                    geom_xx = ointcloud.PointCloud(anchor_dataset)
+                    geom_xx = pointcloud.PointCloud(anchor_dataset)
                     costs = []
-                    for dataset in meta_data_obj.datasets:
-                        dataset = FastICA().fit_transform(dataset)
+                    for dataset in self.meta_data_obj.datasets:
+                        dataset = FastICA().fit_transform(dataset['X_train'])
                         geom_yy = pointcloud.PointCloud(dataset)
-                        prob = ott.problems.quadratic.QuadraticProblem(geom_xx, geom_yy)
+                        prob = ott.problems.quadratic.quadratic_problem.QuadraticProblem(geom_xx, geom_yy)
                         solver = gromov_wasserstein.GromovWasserstein(rank=6)
                         ot_gwlr = solver(prob)
                         cost = ot_gwlr.costs[ot_gwlr.costs > 0][-1]
                         costs.append(cost)
 
         distance = min(costs)
-        best_model = models.index(costs.index(distance))
-        score = scores.index(costs.index(distance))
-        dataset = datasets.index(costs.index(distance))
-        return best_model, distance, score, dataset
+        self.best_model = md.models[costs.index(distance)]
+        self.score = md.scores[costs.index(distance)]
+        self.dataset = md.datasets[costs.index(distance)]
+        return self.best_model, distance, self.score, self.dataset
