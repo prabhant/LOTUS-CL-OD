@@ -1,5 +1,5 @@
 # LOTUS DEMO
-Demo code for LOTUS API, Meant to be used with GAMAOD or GAMAClust
+Demo code for LOTUS API, Meant to be used with GAMAOD or GAMAClust (IJCAI 23)
 
 ## Documentation
 LOTUS relies on two classes:
