@@ -67,38 +67,91 @@ class LotusMetaData:
         
 
 class LotusModel:
-    def __init__(self, new_dataset, meta_data_obj, distance, preprocessing):
+    def __init__(self, new_dataset, meta_data_obj, distance='gwlr', preprocessing='ica'):
+        """
+        Initialize LotusModel for finding the best model based on distance metrics.
+        
+        Args:
+            new_dataset: The new dataset to find a model for
+            meta_data_obj: LotusMetaData object containing pre-computed models
+            distance: Distance metric to use ('gwlr' currently supported)
+            preprocessing: Preprocessing method ('ica' currently supported)
+        """
         self.new_dataset = new_dataset
         self.meta_data_obj = meta_data_obj
         self.distance = distance
         self.preprocessing = preprocessing
+        
+        # Initialize results
         self.best_model = None
         self.best_score = None
         self.best_dataset = None
         self.best_distance = None
 
-    def find_model(self):
-        # find the best model
-        best_model = None
-        best_score = None
-        for i in range(len(md.datasets)):
-            if self.distance == 'gwlr':
-                if self.preprocessing == 'ica':
-                    anchor_dataset = self.new_dataset
-                    anchor_dataset = FastICA().fit_transform(anchor_dataset)
-                    geom_xx = pointcloud.PointCloud(anchor_dataset)
-                    costs = []
-                    for dataset in self.meta_data_obj.datasets:
-                        dataset = FastICA().fit_transform(dataset['X_train'])
-                        geom_yy = pointcloud.PointCloud(dataset)
-                        prob = ott.problems.quadratic.quadratic_problem.QuadraticProblem(geom_xx, geom_yy)
-                        solver = gromov_wasserstein.GromovWasserstein(rank=6)
-                        ot_gwlr = solver(prob)
-                        cost = ot_gwlr.costs[ot_gwlr.costs > 0][-1]
-                        costs.append(cost)
+    def _preprocess_data(self, data):
+        """Apply preprocessing to the data."""
+        if self.preprocessing == 'ica':
+            return FastICA().fit_transform(data)
+        else:
+            raise ValueError(f"Unsupported preprocessing method: {self.preprocessing}")
 
-        distance = min(costs)
-        self.best_model = md.models[costs.index(distance)]
-        self.score = md.scores[costs.index(distance)]
-        self.dataset = md.datasets[costs.index(distance)]
-        return self.best_model, distance, self.score, self.dataset
+    def _calculate_gwlr_distance(self, anchor_data, target_data):
+        """Calculate Gromov-Wasserstein distance between two datasets."""
+        geom_xx = pointcloud.PointCloud(anchor_data)
+        geom_yy = pointcloud.PointCloud(target_data)
+        prob = quadratic_problem.QuadraticProblem(geom_xx, geom_yy)
+        solver = gromov_wasserstein.GromovWasserstein(rank=6)
+        ot_gwlr = solver(prob)
+        return ot_gwlr.costs[ot_gwlr.costs > 0][-1]
+
+    def _calculate_distances(self):
+        """Calculate distances between new dataset and all metadata datasets."""
+        if self.distance != 'gwlr':
+            raise ValueError(f"Unsupported distance metric: {self.distance}")
+        
+        # Preprocess anchor dataset
+        anchor_dataset = self._preprocess_data(self.new_dataset)
+        
+        costs = []
+        for dataset in self.meta_data_obj.datasets:
+            # Preprocess target dataset
+            target_data = self._preprocess_data(dataset['X_train'])
+            
+            # Calculate distance
+            cost = self._calculate_gwlr_distance(anchor_dataset, target_data)
+            costs.append(cost)
+        
+        return costs
+
+    def find_model(self):
+        """
+        Find the best model based on distance metrics.
+        
+        Returns:
+            tuple: (best_model, distance, score, dataset)
+        """
+        costs = self._calculate_distances()
+        
+        # Find minimum distance and corresponding model
+        min_distance = min(costs)
+        best_index = costs.index(min_distance)
+        
+        # Store results
+        self.best_model = self.meta_data_obj.models[best_index]
+        self.best_score = self.meta_data_obj.scores[best_index]
+        self.best_dataset = self.meta_data_obj.datasets[best_index]
+        self.best_distance = min_distance
+        
+        return self.best_model, self.best_distance, self.best_score, self.best_dataset
+
+    def get_results(self):
+        """Get the results of the model selection."""
+        if self.best_model is None:
+            raise RuntimeError("Call find_model() first")
+        
+        return {
+            'model': self.best_model,
+            'distance': self.best_distance,
+            'score': self.best_score,
+            'dataset': self.best_dataset
+        }
